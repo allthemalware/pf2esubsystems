@@ -1,0 +1,10 @@
+node_modules/
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+
+# editor / local settings
+
+# local reference clone used by tools/build_reference.py (not part of the project)
+/pf2e-data/

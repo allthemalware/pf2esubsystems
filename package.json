@@ -1,0 +1,52 @@
+{
+  "name": "pf2e-subsystems",
+  "version": "0.1.0",
+  "description": "Run Pathfinder 2e's Victory Point subsystems at the table — chases, infiltrations, influence encounters and research (single self-contained HTML).",
+  "keywords": [
+    "pathfinder",
+    "pf2e",
+    "gm",
+    "subsystems",
+    "victory-points",
+    "chase",
+    "infiltration",
+    "influence",
+    "research",
+    "ttrpg"
+  ],
+  "homepage": "https://thewhytewolf.github.io/pf2esubsystems/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TheWhyteWolf/pf2esubsystems.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TheWhyteWolf/pf2esubsystems/issues"
+  },
+  "author": "Whyte",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "bin": {
+    "pf2e-subsystems": "bin/cli.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "tools/",
+    "data/",
+    "dist/",
+    "notice.md"
+  ],
+  "scripts": {
+    "build": "python3 tools/build.py",
+    "build:ref": "python3 tools/build_reference.py --src \"$PF2E_DATA/packs/pf2e\" --out data/reference.generated.js",
+    "build:sub": "python3 tools/build_subsystems.py --src \"$PF2E_DATA/packs/pf2e/journals/gm-screen.json\" --out data/subsystems.generated.js",
+    "test": "node tools/test.mjs",
+    "check": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}

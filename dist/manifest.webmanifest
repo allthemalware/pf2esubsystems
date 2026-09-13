@@ -1,0 +1,13 @@
+{
+  "name": "PF2e Subsystems",
+  "short_name": "PF2e Subsystems",
+  "description": "Run Pathfinder 2e's Victory Point subsystems at the table: chases, infiltrations, influence encounters and research.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#14161b",
+  "theme_color": "#14161b",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
