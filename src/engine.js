@@ -264,10 +264,20 @@ function addDeltas(enc, deltas) {
   });
 }
 
-/* Thresholds fire once, in order, the first time the pool reaches them. */
+/* What a threshold is counted against. In a sequence the points reset at every
+   obstacle, so progress is the obstacle count; everywhere else it is the pool. */
+function thresholdValue(enc) {
+  return subOf(enc).thresholdBasis === "progress"
+    ? enc.run.obstacleIndex
+    : (enc.run.pools[poolsOf(enc)[0].key] || 0);
+}
+function thresholdUnit(enc) {
+  return subOf(enc).thresholdBasis === "progress" ? "obstacles cleared" : poolsOf(enc)[0].name;
+}
+
+/* Thresholds fire once, in order, the first time the count reaches them. */
 function checkThresholds(enc) {
-  const key = poolsOf(enc)[0].key;
-  const value = enc.run.pools[key] || 0;
+  const value = thresholdValue(enc);
   const hits = [];
   (enc.def.thresholds || []).slice()
     .sort((a, b) => a.at - b.at)
@@ -390,6 +400,7 @@ function maybeAdvance(enc) {
   if (ob.mode !== "individual") enc.run.pools[poolKey] = 0;
   enc.run.obstacleIndex += 1;
   enc.run._justCleared = ob.name || "that obstacle";
+  checkThresholds(enc);
 }
 
 function extra(encId, key) {
@@ -693,7 +704,8 @@ function meterPips(enc, pool, value, target) {
   if (!target) return "";
   const marks = pool.role === "hazard"
     ? ((awarenessLadder(enc) || {}).marks || [])
-    : (enc.def.thresholds || []).map((t) => t.at);
+    : (subOf(enc).thresholdBasis === "progress"
+      ? [] : (enc.def.thresholds || []).map((t) => t.at));
   const width = Math.min(100, target ? (value / target) * 100 : 0);
   const ticks = marks.filter((m) => m > 0 && m < target).map((m) =>
     '<span class="tick" style="left:' + ((m / target) * 100) + '%" title="'
@@ -829,8 +841,10 @@ function scoreFrom(encId, actor, degree, edge) {
 function thresholdStateHtml(enc) {
   const list = (enc.def.thresholds || []).slice().sort((a, b) => a.at - b.at);
   if (!list.length) return "";
-  const v = enc.run.pools[poolsOf(enc)[0].key] || 0;
-  return '<section class="card"><h2>Thresholds</h2>' + list.map((t, i) => {
+  const v = thresholdValue(enc);
+  return '<section class="card"><h2>Thresholds</h2>'
+    + '<p class="dim">Counted in ' + esc(thresholdUnit(enc)) + " — at " + v + " now.</p>"
+    + list.map((t, i) => {
     const hit = v >= t.at;
     return '<div class="throw' + (hit ? " hit" : "") + '">'
       + '<span class="pill">' + t.at + "</span>"
@@ -1147,7 +1161,8 @@ function setGoal(encId, value) {
 }
 
 function thresholdEditorHtml(enc) {
-  return '<div class="fld"><label class="flabel">Thresholds</label>'
+  return '<div class="fld"><label class="flabel">Thresholds ('
+    + esc(thresholdUnit(enc)) + ')</label>'
     + (enc.def.thresholds || []).map((t, i) =>
       '<div class="obrow"><input class="inp num" type="number" value="' + t.at
       + '" oninput="setThreshold(\'' + enc.id + "'," + i + ',\'at\',this.value)">'

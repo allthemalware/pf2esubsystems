@@ -13,9 +13,9 @@
 
 /* The four outcomes, in the order they appear on every button row. */
 const DEGREES = [
-  { key: "critSuccess", label: "Critical success", short: "Crit", tone: "heal" },
-  { key: "success",     label: "Success",          short: "Success", tone: "ok" },
-  { key: "failure",     label: "Failure",          short: "Fail", tone: "warn" },
+  { key: "critSuccess", label: "Critical success", short: "Crit succ", tone: "heal" },
+  { key: "success",     label: "Success",          short: "Success",   tone: "ok" },
+  { key: "failure",     label: "Failure",          short: "Failure",   tone: "warn" },
   { key: "critFailure", label: "Critical failure", short: "Crit fail", tone: "harm" },
 ];
 
@@ -33,6 +33,9 @@ const GM_CALLS = {
   thresholds:
     "Thresholds and what reaching one grants are entirely yours; the book " +
     "gives scales, not contents.",
+  thresholdProgress:
+    "Counted in obstacles cleared, not points — the points reset at every " +
+    "obstacle, so they are not what measures progress across the whole run.",
   researchCap:
     "Each research check has a maximum RP. Past it the PCs learn nothing new " +
     "from that source and have to go looking elsewhere.",
@@ -56,6 +59,9 @@ const SUBSYSTEMS = {
       critFailure: { cp: -1 },
     },
     structure: "sequence",
+    /* Chase Points reset at every obstacle, so a threshold counted in points
+       would be meaningless. What advances across a chase is obstacles cleared. */
+    thresholdBasis: "progress",
     /* GM Core: half the obstacles need one fewer point than the party size,
        half need two fewer, minimum 1. */
     obstacleCost: { base: "party", offsets: [1, 2], min: 1 },
@@ -72,7 +78,7 @@ const SUBSYSTEMS = {
               "usually 1 CP, or 2 if it was exceptionally helpful." },
     ],
     obstacleLibrary: true,
-    asks: ["obstacleCost"],
+    asks: ["obstacleCost", "thresholdProgress"],
   },
 
   /* ---------------------------------------------------------- */
@@ -97,6 +103,9 @@ const SUBSYSTEMS = {
     roundEnd: { ap: 1 },
     roundEndNote: "Each infiltration round that passes adds 1 Awareness Point.",
     structure: "sequence",
+    /* As with a chase: progress is obstacles, not the points inside one. The
+       ladder that matters here is Awareness, and that one is derived. */
+    thresholdBasis: "progress",
     obstacleModes: [
       { key: "group", label: "Group", note: "The party pools its points; cleared once for everyone." },
       { key: "individual", label: "Individual", note: "Every PC has to earn the points separately." },
@@ -124,7 +133,7 @@ const SUBSYSTEMS = {
       { key: "noticed", label: "Something went wrong", deltas: { ap: 1 },
         note: "Anything disruptive the rules don't price. Your call." },
     ],
-    asks: ["awarenessFail", "obstacleCost"],
+    asks: ["awarenessFail", "obstacleCost", "thresholdProgress"],
   },
 
   /* ---------------------------------------------------------- */

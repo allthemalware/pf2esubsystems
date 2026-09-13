@@ -379,9 +379,9 @@ const GENERATED_ACTIONS = [{"slug": "administer-first-aid", "name": "Administer 
 
 /* The four outcomes, in the order they appear on every button row. */
 const DEGREES = [
-  { key: "critSuccess", label: "Critical success", short: "Crit", tone: "heal" },
-  { key: "success",     label: "Success",          short: "Success", tone: "ok" },
-  { key: "failure",     label: "Failure",          short: "Fail", tone: "warn" },
+  { key: "critSuccess", label: "Critical success", short: "Crit succ", tone: "heal" },
+  { key: "success",     label: "Success",          short: "Success",   tone: "ok" },
+  { key: "failure",     label: "Failure",          short: "Failure",   tone: "warn" },
   { key: "critFailure", label: "Critical failure", short: "Crit fail", tone: "harm" },
 ];
 
@@ -399,6 +399,9 @@ const GM_CALLS = {
   thresholds:
     "Thresholds and what reaching one grants are entirely yours; the book " +
     "gives scales, not contents.",
+  thresholdProgress:
+    "Counted in obstacles cleared, not points — the points reset at every " +
+    "obstacle, so they are not what measures progress across the whole run.",
   researchCap:
     "Each research check has a maximum RP. Past it the PCs learn nothing new " +
     "from that source and have to go looking elsewhere.",
@@ -422,6 +425,9 @@ const SUBSYSTEMS = {
       critFailure: { cp: -1 },
     },
     structure: "sequence",
+    /* Chase Points reset at every obstacle, so a threshold counted in points
+       would be meaningless. What advances across a chase is obstacles cleared. */
+    thresholdBasis: "progress",
     /* GM Core: half the obstacles need one fewer point than the party size,
        half need two fewer, minimum 1. */
     obstacleCost: { base: "party", offsets: [1, 2], min: 1 },
@@ -438,7 +444,7 @@ const SUBSYSTEMS = {
               "usually 1 CP, or 2 if it was exceptionally helpful." },
     ],
     obstacleLibrary: true,
-    asks: ["obstacleCost"],
+    asks: ["obstacleCost", "thresholdProgress"],
   },
 
   /* ---------------------------------------------------------- */
@@ -463,6 +469,9 @@ const SUBSYSTEMS = {
     roundEnd: { ap: 1 },
     roundEndNote: "Each infiltration round that passes adds 1 Awareness Point.",
     structure: "sequence",
+    /* As with a chase: progress is obstacles, not the points inside one. The
+       ladder that matters here is Awareness, and that one is derived. */
+    thresholdBasis: "progress",
     obstacleModes: [
       { key: "group", label: "Group", note: "The party pools its points; cleared once for everyone." },
       { key: "individual", label: "Individual", note: "Every PC has to earn the points separately." },
@@ -490,7 +499,7 @@ const SUBSYSTEMS = {
       { key: "noticed", label: "Something went wrong", deltas: { ap: 1 },
         note: "Anything disruptive the rules don't price. Your call." },
     ],
-    asks: ["awarenessFail", "obstacleCost"],
+    asks: ["awarenessFail", "obstacleCost", "thresholdProgress"],
   },
 
   /* ---------------------------------------------------------- */
@@ -858,10 +867,20 @@ function addDeltas(enc, deltas) {
   });
 }
 
-/* Thresholds fire once, in order, the first time the pool reaches them. */
+/* What a threshold is counted against. In a sequence the points reset at every
+   obstacle, so progress is the obstacle count; everywhere else it is the pool. */
+function thresholdValue(enc) {
+  return subOf(enc).thresholdBasis === "progress"
+    ? enc.run.obstacleIndex
+    : (enc.run.pools[poolsOf(enc)[0].key] || 0);
+}
+function thresholdUnit(enc) {
+  return subOf(enc).thresholdBasis === "progress" ? "obstacles cleared" : poolsOf(enc)[0].name;
+}
+
+/* Thresholds fire once, in order, the first time the count reaches them. */
 function checkThresholds(enc) {
-  const key = poolsOf(enc)[0].key;
-  const value = enc.run.pools[key] || 0;
+  const value = thresholdValue(enc);
   const hits = [];
   (enc.def.thresholds || []).slice()
     .sort((a, b) => a.at - b.at)
@@ -984,6 +1003,7 @@ function maybeAdvance(enc) {
   if (ob.mode !== "individual") enc.run.pools[poolKey] = 0;
   enc.run.obstacleIndex += 1;
   enc.run._justCleared = ob.name || "that obstacle";
+  checkThresholds(enc);
 }
 
 function extra(encId, key) {
@@ -1287,7 +1307,8 @@ function meterPips(enc, pool, value, target) {
   if (!target) return "";
   const marks = pool.role === "hazard"
     ? ((awarenessLadder(enc) || {}).marks || [])
-    : (enc.def.thresholds || []).map((t) => t.at);
+    : (subOf(enc).thresholdBasis === "progress"
+      ? [] : (enc.def.thresholds || []).map((t) => t.at));
   const width = Math.min(100, target ? (value / target) * 100 : 0);
   const ticks = marks.filter((m) => m > 0 && m < target).map((m) =>
     '<span class="tick" style="left:' + ((m / target) * 100) + '%" title="'
@@ -1423,8 +1444,10 @@ function scoreFrom(encId, actor, degree, edge) {
 function thresholdStateHtml(enc) {
   const list = (enc.def.thresholds || []).slice().sort((a, b) => a.at - b.at);
   if (!list.length) return "";
-  const v = enc.run.pools[poolsOf(enc)[0].key] || 0;
-  return '<section class="card"><h2>Thresholds</h2>' + list.map((t, i) => {
+  const v = thresholdValue(enc);
+  return '<section class="card"><h2>Thresholds</h2>'
+    + '<p class="dim">Counted in ' + esc(thresholdUnit(enc)) + " — at " + v + " now.</p>"
+    + list.map((t, i) => {
     const hit = v >= t.at;
     return '<div class="throw' + (hit ? " hit" : "") + '">'
       + '<span class="pill">' + t.at + "</span>"
@@ -1741,7 +1764,8 @@ function setGoal(encId, value) {
 }
 
 function thresholdEditorHtml(enc) {
-  return '<div class="fld"><label class="flabel">Thresholds</label>'
+  return '<div class="fld"><label class="flabel">Thresholds ('
+    + esc(thresholdUnit(enc)) + ')</label>'
     + (enc.def.thresholds || []).map((t, i) =>
       '<div class="obrow"><input class="inp num" type="number" value="' + t.at
       + '" oninput="setThreshold(\'' + enc.id + "'," + i + ',\'at\',this.value)">'

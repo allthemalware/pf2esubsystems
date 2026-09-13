@@ -231,6 +231,33 @@ group("Victory Points — the framework underneath");
 }
 
 /* ============================================================ */
+group("Thresholds count the right thing");
+{
+  /* In a chase the points reset at every obstacle, so a threshold counted in
+     points would fire once and then sit stranded at zero. */
+  eq(ev("SUBSYSTEMS.chase.thresholdBasis"), "progress", "a chase counts thresholds in obstacles cleared");
+  eq(ev("SUBSYSTEMS.infiltration.thresholdBasis"), "progress", "so does an infiltration");
+  ok(ev("SUBSYSTEMS.influence.thresholdBasis === undefined"), "an influence encounter counts its points");
+  ok(ev("SUBSYSTEMS.research.thresholdBasis === undefined"), "and so does research");
+
+  const id = mk("chase", { preset: "short", partySize: 4 });
+  ev(`(function(){ const e = library.encounters.find(x=>x.id===${JSON.stringify(id)});
+      e.def.obstacles.forEach(o => { o.cost = 1; });
+      e.def.thresholds = [{at:2,label:"They gain ground",effect:""}];
+      e.run = freshRun(e); save(); })()`);
+  eq(ev(`thresholdValue(library.encounters.find(e=>e.id===${JSON.stringify(id)}))`), 0,
+    "nothing cleared yet");
+  scoreAs(id, "Mari", "success");     // clears obstacle 1
+  eq(run(id).fired.length, 0, "one obstacle down is not yet the threshold");
+  scoreAs(id, "Sable", "success");    // clears obstacle 2
+  eq([run(id).obstacleIndex, run(id).fired.length], [2, 1],
+    "the second obstacle cleared fires it — even though the pool is back at 0");
+  eq(pools(id).cp, 0, "and the pool is indeed back at 0");
+  has(ev(`thresholdUnit(library.encounters.find(e=>e.id===${JSON.stringify(id)}))`),
+    "obstacles cleared", "the board says what it is counting");
+}
+
+/* ============================================================ */
 group("Undo — including across an obstacle boundary");
 {
   const id = mk("chase", { preset: "short", partySize: 4 });

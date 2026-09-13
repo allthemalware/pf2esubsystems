@@ -88,13 +88,13 @@ npm install                   # jsdom
 node tools/test.mjs
 ```
 
-98 assertions over the built file. They cover the arithmetic rather than the
+107 assertions over the built file. They cover the arithmetic rather than the
 rendering: every degree-of-success scale, the chase discard at an obstacle
 boundary, awareness accruing at end of round, the 2× failure threshold and its
 quarter marks, individual versus group obstacles, Edge Point spends, research
-caps, thresholds firing exactly once, both Victory Point scales, undo restoring
-exactly across an obstacle advance, and that the two generated data files line
-up with each other.
+caps, thresholds firing exactly once against the right count, both Victory
+Point scales, undo restoring exactly across an obstacle advance, and that the
+two generated data files line up with each other.
 
 ## The other three tools
 
