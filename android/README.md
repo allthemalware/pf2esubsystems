@@ -78,7 +78,7 @@ phone. The workflow does not publish to Google Play.
 
 ## Release bundle
 
-The application ID is `io.github.thewhytewolf.pf2esubsystems`, with minimum
+The application ID is `io.github.allthemalware.pf2esubsystems`, with minimum
 Android 7.0 (API 24), target API 36 and initial version 0.1.0 (version code 1).
 
 To sign a release, provide these environment variables outside the repository:
@@ -143,7 +143,7 @@ Once the workflow succeeds, open **Releases**, review the draft's notes and
 attachments, then publish the prerelease. Share its link with testers. They
 download the APK on their phone, open it from Downloads, and follow Android's
 installation prompts. Publish a new prerelease for updates. Testers can report
-bugs through [GitHub Issues](https://github.com/TheWhyteWolf/pf2esubsystems/issues),
+bugs through [GitHub Issues](https://github.com/allthemalware/pf2esubsystems/issues),
 including the downloaded app version, Android version, encounter type and steps
 to reproduce. On a public repository, published prereleases are public;
 private repositories require testers to have repository read access.
@@ -174,7 +174,7 @@ purchase token is passed to the WebView or saved in encounter backups.
 Before payments are available, configure the app in Play Console:
 
 1. Link a Google payments profile and upload a signed bundle with billing to an
-   internal testing track, using package `io.github.thewhytewolf.pf2esubsystems`.
+   internal testing track, using package `io.github.allthemalware.pf2esubsystems`.
 2. Under **Monetize with Play → Products → One-time products**, create these
    products. For each, create a **Buy** purchase option with ID **`tip`**, set
    your prices and regions, and activate both the product and purchase option.

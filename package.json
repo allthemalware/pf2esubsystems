@@ -14,13 +14,13 @@
     "research",
     "ttrpg"
   ],
-  "homepage": "https://thewhytewolf.github.io/pf2esubsystems/",
+  "homepage": "https://allthemalware.github.io/pf2esubsystems/",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/TheWhyteWolf/pf2esubsystems.git"
+    "url": "git+https://github.com/allthemalware/pf2esubsystems.git"
   },
   "bugs": {
-    "url": "https://github.com/TheWhyteWolf/pf2esubsystems/issues"
+    "url": "https://github.com/allthemalware/pf2esubsystems/issues"
   },
   "author": "Whyte",
   "license": "SEE LICENSE IN LICENSE",

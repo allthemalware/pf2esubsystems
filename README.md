@@ -126,9 +126,9 @@ two generated data files line up with each other.
 
 ## The other three tools
 
-- [PF2e Primer](https://thewhytewolf.github.io/pf2eprimer/) — an interactive introduction for new players.
-- [PF2e Spellbook](https://thewhytewolf.github.io/pf2espellcards/) — player-side spell preparation and casting.
-- [PF2e Party Tracker](https://thewhytewolf.github.io/pf2epartytracker/) — GM-side passive stats, secret checks and the exploration board.
+- [PF2e Primer](https://allthemalware.github.io/pf2eprimer/) — an interactive introduction for new players.
+- [PF2e Spellbook](https://allthemalware.github.io/pf2espellcards/) — player-side spell preparation and casting.
+- [PF2e Party Tracker](https://allthemalware.github.io/pf2epartytracker/) — GM-side passive stats, secret checks and the exploration board.
 
 ## Licensing
 
