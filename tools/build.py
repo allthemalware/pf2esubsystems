@@ -11,6 +11,8 @@ co-GM, or host. Run from the project root:
 """
 import os
 import time
+import argparse
+import json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -21,13 +23,24 @@ def read(rel):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--android", action="store_true", help="build bundled Android assets")
+    args = parser.parse_args()
     html = read("src/template.html")
+    notices = [{"title": "Application license", "text": read("LICENSE")},
+               {"title": "Rules attribution and licenses", "text": read("notice.md")}]
+    if args.android:
+        notices.append({"title": "Android libraries", "text": read("android/NOTICE")})
     parts = {
+        "/*__INJECT_PLATFORM__*/": "window.PF2E_ANDROID = true;" if args.android else "",
+        "/*__INJECT_NOTICES__*/": "const APP_NOTICES = " + json.dumps(notices).replace("<", "\\u003c") + ";",
         "/*__INJECT_STYLES__*/": read("src/styles.css"),
         "/*__INJECT_DATA__*/": read("data/subsystems.generated.js"),
         "/*__INJECT_REFERENCE__*/": read("data/reference.generated.js"),
         "/*__INJECT_CONTENT__*/": read("src/content.js"),
+        "/*__INJECT_VALIDATION__*/": read("src/validation.js"),
         "/*__INJECT_ENGINE__*/": read("src/engine.js"),
+        "/*__INJECT_MOBILE__*/": read("src/mobile.js"),
     }
     for marker, content in parts.items():
         if marker not in html:
@@ -35,7 +48,7 @@ def main():
         # str.replace (not regex) so JS/CSS content is inserted verbatim
         html = html.replace(marker, content)
 
-    out_dir = os.path.join(ROOT, "dist")
+    out_dir = os.path.join(ROOT, "android/app/build/generated/pf2eAssets/www" if args.android else "dist")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "index.html")
     with open(out_path, "w", encoding="utf-8") as fh:
@@ -44,7 +57,7 @@ def main():
     # Static PWA files (for the hosted version). Harmlessly absent when
     # index.html is opened as a downloaded standalone file.
     cache_ver = time.strftime("%Y%m%d%H%M%S")
-    for name in ("icon.svg", "manifest.webmanifest", "sw.js"):
+    for name in (("icon.svg",) if args.android else ("icon.svg", "manifest.webmanifest", "sw.js")):
         src = os.path.join(ROOT, "src", name)
         if not os.path.exists(src):
             continue
@@ -55,7 +68,7 @@ def main():
             fh.write(content)
 
     kb = os.path.getsize(out_path) / 1024
-    print(f"built {out_path} ({kb:.0f} KB) + PWA files (cache {cache_ver})")
+    print(f"built {out_path} ({kb:.0f} KB)" + (" — Android assets" if args.android else f" + PWA files (cache {cache_ver})"))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,147 @@
+name: Prepare Android prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New prerelease tag, such as v0.1.0-beta.1'
+        required: true
+        type: string
+      version_code:
+        description: 'Android version code: increase for every distributed build'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-prerelease-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  prerelease:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate release version
+        env:
+          BETA_TAG: ${{ inputs.tag }}
+          APP_VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          tag = os.environ['BETA_TAG']
+          code = os.environ['APP_VERSION_CODE']
+          if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+', tag):
+              raise SystemExit('Use a prerelease tag such as v0.1.0-beta.1.')
+          if not re.fullmatch(r'[1-9][0-9]{0,9}', code) or int(code) > 2100000000:
+              raise SystemExit('Version code must be an integer from 1 to 2100000000.')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'RELEASE_TAG={tag}\nVERSION_NAME={tag[1:]}\nVERSION_CODE={code}\n')
+          PY
+      - name: Require a new tag
+        run: |
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            echo 'That tag already exists. Use a new prerelease tag.' >&2
+            exit 1
+          fi
+      - name: Prepare signing key
+        env:
+          PF2E_ANDROID_KEYSTORE_BASE64: ${{ secrets.PF2E_ANDROID_KEYSTORE_BASE64 }}
+          PF2E_ANDROID_STORE_PASSWORD: ${{ secrets.PF2E_ANDROID_STORE_PASSWORD }}
+          PF2E_ANDROID_KEY_ALIAS: ${{ secrets.PF2E_ANDROID_KEY_ALIAS }}
+          PF2E_ANDROID_KEY_PASSWORD: ${{ secrets.PF2E_ANDROID_KEY_PASSWORD }}
+        run: |
+          for setting in PF2E_ANDROID_KEYSTORE_BASE64 PF2E_ANDROID_STORE_PASSWORD PF2E_ANDROID_KEY_ALIAS PF2E_ANDROID_KEY_PASSWORD; do
+            if [ -z "${!setting}" ]; then
+              echo "Add the repository Actions secret $setting before preparing a prerelease." >&2
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$PF2E_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/pf2e-signing-key.jks"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Test app
+        run: |
+          npm ci
+          npm run check
+          python3 tools/test_billing.py
+      - name: Build signed release APK
+        env:
+          PF2E_ANDROID_KEYSTORE: ${{ runner.temp }}/pf2e-signing-key.jks
+          PF2E_ANDROID_STORE_PASSWORD: ${{ secrets.PF2E_ANDROID_STORE_PASSWORD }}
+          PF2E_ANDROID_KEY_ALIAS: ${{ secrets.PF2E_ANDROID_KEY_ALIAS }}
+          PF2E_ANDROID_KEY_PASSWORD: ${{ secrets.PF2E_ANDROID_KEY_PASSWORD }}
+        run: |
+          python3 tools/gradle.py --no-daemon lintRelease assembleRelease \
+            -PappVersionCode="$VERSION_CODE" -PappVersionName="$VERSION_NAME"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify android/app/build/outputs/apk/release/app-release.apk
+      - name: Package APK and checksum
+        run: |
+          mkdir -p "$RUNNER_TEMP/pf2e-prerelease"
+          cp android/app/build/outputs/apk/release/app-release.apk \
+            "$RUNNER_TEMP/pf2e-prerelease/PF2e-Subsystems-$VERSION_NAME.apk"
+          cd "$RUNNER_TEMP/pf2e-prerelease"
+          sha256sum "PF2e-Subsystems-$VERSION_NAME.apk" > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pf2e-subsystems-signed-prerelease
+          path: ${{ runner.temp }}/pf2e-prerelease/*
+          if-no-files-found: error
+      - name: Create draft prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          notes = f'''Android preview of PF2e Subsystems {os.environ['VERSION_NAME']}.
+
+          Download the attached APK and install it on Android 7.0 or later.
+          Run, Prep and Reference work offline. All app features are free.
+
+          Please test encounter setup, scoring and undo, Share/Import, file backups,
+          party presets and Back navigation. Report issues in this repository with
+          the downloaded app version, Android version and steps to reproduce.
+
+          Save a library backup before switching between debug, GitHub and Google
+          Play builds: different signing certificates can require reinstalling.
+          Google Play tips need Play Console product and license-tester setup.
+
+          Source commit: {os.environ['GITHUB_SHA']}
+          Android version code: {os.environ['VERSION_CODE']}
+          '''
+          Path(os.environ['RUNNER_TEMP'], 'pf2e-prerelease-notes.md').write_text(notes + '\n')
+          PY
+          gh release create "$RELEASE_TAG" \
+            "$RUNNER_TEMP/pf2e-prerelease/PF2e-Subsystems-$VERSION_NAME.apk" \
+            "$RUNNER_TEMP/pf2e-prerelease/SHA256SUMS.txt" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "PF2e Subsystems $VERSION_NAME" \
+            --notes-file "$RUNNER_TEMP/pf2e-prerelease-notes.md" --draft --prerelease
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/pf2e-signing-key.jks"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prerelease-lint
+          path: android/app/build/reports/lint-results-release.*
+          if-no-files-found: ignore

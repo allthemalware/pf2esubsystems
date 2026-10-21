@@ -44,7 +44,12 @@
     "build:ref": "python3 tools/build_reference.py --src \"$PF2E_DATA/packs/pf2e\" --out data/reference.generated.js",
     "build:sub": "python3 tools/build_subsystems.py --src \"$PF2E_DATA/packs/pf2e/journals/gm-screen.json\" --out data/subsystems.generated.js",
     "test": "node tools/test.mjs",
-    "check": "npm run build && npm test"
+    "check": "npm run build && npm test && npm run test:android && npm run test:mobile",
+    "test:android": "node --test tools/test_android.mjs",
+    "test:mobile": "node --test tools/test_mobile_dom.mjs",
+    "build:android": "python3 tools/build.py --android",
+    "android:apk": "python3 tools/gradle.py assembleDebug",
+    "android:bundle": "python3 tools/gradle.py bundleRelease"
   },
   "devDependencies": {
     "jsdom": "^24.0.0"

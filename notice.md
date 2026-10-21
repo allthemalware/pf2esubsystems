@@ -78,7 +78,7 @@ are included, any such Reserved Material has been omitted or genericized.
 
 ### Crediting this work downstream
 
-pf2e-primer © 2026 Whyte Erminae.
+pf2e-subsystems © 2026 Whyte Erminae.
 
 ---
 

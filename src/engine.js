@@ -45,7 +45,7 @@ function plural(n, one, many) { return n === 1 ? one : (many || one + "s"); }
    PERSISTENCE
    ============================================================ */
 function blankLibrary() {
-  return { v: 1, settings: { themeMode: "auto", custom: null }, encounters: [], activeId: null };
+  return { v: 1, settings: { themeMode: "auto", custom: null, keepAwake: false }, parties: [], encounters: [], activeId: null };
 }
 function load() {
   try {
@@ -56,13 +56,17 @@ function load() {
   }
   if (!library || typeof library !== "object") library = blankLibrary();
   library.settings = library.settings || { themeMode: "auto", custom: null };
+  library.settings.keepAwake = library.settings.keepAwake === true;
+  library.parties = Array.isArray(library.parties) ? library.parties : [];
   library.encounters = Array.isArray(library.encounters) ? library.encounters : [];
 }
 function save() {
   try {
     localStorage.setItem(KEY, JSON.stringify(library));
+    return true;
   } catch (e) {
     toast("Couldn't save — this browser's storage is full or blocked.");
+    return false;
   }
 }
 
@@ -82,6 +86,33 @@ function applyTheme() {
   } else {
     document.documentElement.style.removeProperty("--accent");
   }
+  const colors = accessibleAccent((s.custom && s.custom.accent) || '#a87c4a', mode);
+  document.documentElement.style.setProperty('--accent-ink', colors.ink);
+  document.documentElement.style.setProperty('--accent-text', colors.text);
+}
+
+function luminance(hex) {
+  const channels = [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16) / 255)
+    .map((value) => value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4));
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+function contrastRatio(a, b) {
+  const first = luminance(a), second = luminance(b);
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+}
+function accessibleAccent(accent, mode) {
+  if (!/^#[a-fA-F0-9]{6}$/.test(accent)) accent = '#a87c4a';
+  const ink = contrastRatio(accent, '#000000') > contrastRatio(accent, '#ffffff') ? '#000000' : '#ffffff';
+  const background = mode === 'light' ? '#eef0f4' : '#262a33';
+  const target = mode === 'light' ? 0 : 255;
+  for (let step = 0; step <= 20; step++) {
+    const adjusted = '#' + [1, 3, 5].map((index) => {
+      const value = parseInt(accent.slice(index, index + 2), 16);
+      return Math.round(value + (target - value) * step / 20).toString(16).padStart(2, '0');
+    }).join('');
+    if (contrastRatio(adjusted, background) >= 4.5) return { ink, text: adjusted };
+  }
+  return { ink, text: mode === 'light' ? '#000000' : '#ffffff' };
 }
 function setThemeMode(m) { library.settings.themeMode = m; save(); applyTheme(); renderMenu(); }
 function setAccent(v) {
@@ -537,6 +568,8 @@ function exportEncounter(id) {
   if (!enc) return;
   const payload = { t: "pf2e-subsystem", v: 1, subsystem: enc.subsystem, name: enc.name, def: enc.def };
   const code = b64encode(JSON.stringify(payload));
+  const host = androidHost();
+  if (host) { host.shareEncounter(code, enc.name); return; }
   navigator.clipboard && navigator.clipboard.writeText(code)
     .then(() => toast("Code copied to the clipboard."))
     .catch(() => prompt("Copy this code:", code));
@@ -546,13 +579,9 @@ function exportEncounter(id) {
 function importEncounter(code) {
   let payload;
   try {
-    payload = JSON.parse(b64decode(String(code || "").trim()));
+    payload = parseEncounterCode(code);
   } catch (e) {
-    toast("That doesn't look like an encounter code.");
-    return false;
-  }
-  if (!payload || payload.t !== "pf2e-subsystem" || !SUBSYSTEMS[payload.subsystem]) {
-    toast("That code isn't from this app.");
+    toast(e.message);
     return false;
   }
   const enc = {
@@ -564,9 +593,10 @@ function importEncounter(code) {
     run: null,
   };
   enc.run = freshRun(enc);
-  library.encounters.unshift(enc);
-  library.activeId = enc.id;
-  save();
+  const next = clone(library);
+  next.encounters.unshift(enc);
+  next.activeId = enc.id;
+  if (!storeLibrary(next)) return false;
   toast("Imported.");
   renderAll();
   return true;
@@ -583,6 +613,25 @@ const VIEWS = [
 let current = "prep";
 let menuOpen = false;
 
+function androidHost() {
+  return window.PF2E_ANDROID === true && window.PF2ENative ? window.PF2ENative : null;
+}
+
+/* Back closes Settings first, then returns to the encounter (or empty Prep).
+   At the root, Android handles leaving the app normally. */
+function handleAndroidBack() {
+  if (dialogState) { closeDialog(); return true; }
+  if (menuOpen) { closeMenu(); return true; }
+  const home = activeEnc() ? "run" : "prep";
+  if (current !== home) { go(home); return true; }
+  return false;
+}
+
+function syncAndroidBack() {
+  const host = androidHost();
+  if (host) host.setBackEnabled(!!dialogState || menuOpen || current !== (activeEnc() ? "run" : "prep"));
+}
+
 function go(view) {
   current = view;
   menuOpen = false;
@@ -593,14 +642,37 @@ function openMenu() { menuOpen = true; renderAll(); }
 function closeMenu() { menuOpen = false; renderAll(); }
 
 function renderAll() {
+  const focused = document.activeElement;
+  const actionFocus = focused && focused.classList.contains('deg') ? focused.getAttribute('aria-label') : null;
   renderHeader();
   renderTabs();
   const views = byId("views");
-  if (menuOpen) { views.innerHTML = menuHtml(); return; }
+  if (menuOpen) {
+    views.innerHTML = menuHtml(); byId('runStatus').textContent = '';
+    enhanceAccessibility(); syncDeviceState(); return;
+  }
   if (current === "run") views.innerHTML = runHtml();
   else if (current === "prep") views.innerHTML = prepHtml();
   else views.innerHTML = referenceHtml();
   wireInputs();
+  enhanceAccessibility();
+  syncDeviceState();
+  if (actionFocus) {
+    const replacement = Array.from(views.querySelectorAll('button[aria-label]'))
+      .find((button) => button.getAttribute('aria-label') === actionFocus);
+    if (replacement) replacement.focus({ preventScroll: true });
+  }
+  const enc = activeEnc();
+  const last = enc && enc.run.log[enc.run.log.length - 1];
+  const progress = enc && subOf(enc).structure === 'sequence'
+    ? enc.run.obstacleIndex < enc.def.obstacles.length
+      ? 'Obstacle ' + (enc.run.obstacleIndex + 1) + ' of ' + enc.def.obstacles.length + '. '
+      : 'All obstacles cleared. '
+    : '';
+  byId('runStatus').textContent = current === 'run' && enc
+    ? (last ? (last.actor ? last.actor + ': ' : '') + last.label + '. ' : '')
+      + 'Round ' + enc.run.round + '. ' + progress + poolsOf(enc).map((pool) => pool.name + ': ' + (enc.run.pools[pool.key] || 0)).join('. ')
+    : '';
 }
 function renderMenu() { if (menuOpen) renderAll(); }
 
@@ -615,12 +687,14 @@ function renderHeader() {
   const can = enc && enc.run.log.length;
   undo.disabled = !can;
   undo.classList.toggle("off", !can);
+  undo.setAttribute("aria-label", can ? "Undo: " + enc.run.log[enc.run.log.length - 1].label : "Undo");
 }
 
 function renderTabs() {
   byId("tabs").innerHTML = VIEWS.map((v) =>
     '<button id="nav-' + v.key + '" class="tab' + (current === v.key && !menuOpen ? " on" : "")
-    + '" onclick="go(\'' + v.key + '\')">' + esc(v.label) + "</button>").join("");
+    + '"' + (current === v.key && !menuOpen ? ' aria-current="page"' : '')
+    + ' onclick="go(\'' + v.key + '\')">' + esc(v.label) + "</button>").join("");
 }
 
 /* ============================================================
@@ -800,17 +874,17 @@ function participantsHtml(enc, sub) {
   const isInfluence = enc.subsystem === "influence";
   const checks = enc.def.checks || [];
   const rows = names.map((n) => {
+    const click = (name, args) => esc(name + '(' + args.map((value) => JSON.stringify(value)).join(',') + ')');
     const degBtns = DEGREES.map((d) =>
-      '<button class="deg ' + d.tone + '" onclick="scoreFrom(\'' + enc.id + "','"
-      + esc(n).replace(/'/g, "\\'") + "','" + d.key + '\')">' + esc(d.short) + "</button>").join("");
+      '<button class="deg ' + d.tone + '" aria-label="' + esc(n + ': ' + d.label)
+      + '" onclick="' + click('scoreFrom', [enc.id, n, d.key]) + '">' + esc(d.short) + '</button>').join('');
     const discBtns = isInfluence ? DEGREES.map((d) =>
-      '<button class="deg ghost" onclick="discover(\'' + enc.id + "','"
-      + esc(n).replace(/'/g, "\\'") + "','" + d.key + '\')">' + esc(d.short) + "</button>").join("") : "";
+      '<button class="deg ghost" aria-label="' + esc(n + ': Discover, ' + d.label)
+      + '" onclick="' + click('discover', [enc.id, n, d.key]) + '">' + esc(d.short) + '</button>').join('') : '';
     const edgeBtn = sub.edge
-      ? '<button class="deg edge" onclick="scoreFrom(\'' + enc.id + "','"
-        + esc(n).replace(/'/g, "\\'") + '\',\'failure\',true)" title="'
-        + esc(sub.edge.note) + '">Spend EP</button>'
-      : "";
+      ? '<button class="deg edge" aria-label="' + esc(n + ': spend an Edge Point')
+        + '" onclick="' + click('scoreFrom', [enc.id, n, 'failure', true])
+        + '" title="' + esc(sub.edge.note) + '">Spend EP</button>' : '';
     return '<div class="pcrow"><div class="pcname">' + esc(n) + "</div>"
       + '<div class="degs">' + (isInfluence ? '<span class="deglabel">Influence</span>' : "")
       + degBtns + edgeBtn + "</div>"
@@ -879,35 +953,13 @@ function newEncounterHtml() {
         + "<b>" + esc(s.name) + "</b>"
         + '<span class="dim">' + esc(s.blurb) + "</span></button>";
     }).join("") + "</div>"
-    + '<div class="row"><input id="impCode" class="inp" placeholder="…or paste an encounter code">'
+    + '<label class="flabel" for="impCode">Import encounter code</label>'
+    + '<div class="row"><input id="impCode" class="inp" maxlength="1000000" placeholder="Paste an encounter code">'
     + '<button class="btn" onclick="importEncounter(byId(\'impCode\').value)">Import</button></div>'
     + "</section>";
 }
 
-function startNew(subKey) {
-  const opts = {};
-  if (subKey === "chase") {
-    const p = prompt("Short, medium or long? (6, 8 or 10 obstacles)", "medium");
-    if (p === null) return;
-    opts.preset = /^s/i.test(p) ? "short" : /^l/i.test(p) ? "long" : "medium";
-    const n = parseInt(prompt("How many PCs?", "4"), 10);
-    if (n > 0) opts.partySize = n;
-  } else if (subKey === "custom") {
-    const scales = GENERATED_VP_SCALES || [];
-    const list = scales.map((s, i) => (i + 1) + ") " + s.duration + " — " + s.endPoint + " VP").join("\n");
-    const pick = prompt("How long is this challenge?\n\n" + list + "\n\nNumber:", "2");
-    if (pick === null) return;
-    const idx = parseInt(pick, 10) - 1;
-    if (scales[idx]) opts.scale = scales[idx];
-    const nm = prompt("What are the points called?", "Victory Points");
-    if (nm) { opts.pointName = nm; opts.pointAbbr = nm.split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 3); }
-  } else if (subKey === "influence") {
-    const nm = prompt("Who are they working on?", "The NPC");
-    if (nm === null) return;
-    opts.npcName = nm;
-  }
-  createEncounter(subKey, opts);
-}
+function startNew(subKey) { openEncounterForm(subKey); }
 
 function libraryHtml() {
   if (!library.encounters.length) return "";
@@ -919,7 +971,7 @@ function libraryHtml() {
       + '<span class="glyph">' + esc(s.glyph) + "</span><b>" + esc(e.name) + "</b>"
       + '<span class="dim">' + esc(s.name) + " · round " + e.run.round + "</span></button>"
       + '<div class="rowbtns tight">'
-      + '<button class="chipbtn" onclick="exportEncounter(\'' + e.id + '\')">Code</button>'
+      + '<button class="chipbtn" onclick="exportEncounter(\'' + e.id + '\')">' + (androidHost() ? "Share" : "Code") + '</button>'
       + '<button class="chipbtn" onclick="duplicateEncounter(\'' + e.id + '\')">Copy</button>'
       + '<button class="chipbtn danger" onclick="deleteEncounter(\'' + e.id + '\')">Delete</button>'
       + "</div></div>";
@@ -936,7 +988,8 @@ function editorHtml(enc) {
     + field("Participants", '<input class="inp" value="'
       + esc((enc.def.participants || []).join(", "))
       + '" oninput="setParticipants(\'' + enc.id + '\', this.value)">'
-      + '<span class="hint">Comma separated. These label the rows on the run board.</span>')
+      + '<span class="hint">Comma separated. These label the rows on the run board.</span>'
+      + '<button class="btn ghost" onclick="editParty(null,\'' + enc.id + '\')">Save as party preset</button>')
     + (sub.structure === "sequence" ? obstacleEditorHtml(enc) : "")
     + (sub.structure === "checks" ? checkEditorHtml(enc) : "")
     + (enc.subsystem === "influence" ? npcEditorHtml(enc) : "")
@@ -947,13 +1000,27 @@ function editorHtml(enc) {
 }
 
 function field(label, inner) {
-  return '<div class="fld"><label class="flabel">' + esc(label) + "</label>" + inner + "</div>";
+  if (/type="radio"/.test(inner)) {
+    return '<fieldset class="fld"><legend class="flabel">' + esc(label) + '</legend>' + inner + '</fieldset>';
+  }
+  const id = 'field-' + uid();
+  let controlId = id;
+  inner = inner.replace(/<(input|select|textarea)\b([^>]*)>/, (match, tag, attrs) => {
+    if (tag === 'input' && !/type="(number|color)"/.test(attrs) && !/maxlength=/.test(attrs)) {
+      attrs += ' maxlength="' + (label === 'Participants' ? 3000 : 2000) + '"';
+    }
+    const existing = attrs.match(/\bid="([^"]+)"/);
+    if (existing) { controlId = existing[1]; return '<' + tag + attrs + '>'; }
+    return '<' + tag + ' id="' + id + '"' + attrs + '>';
+  });
+  return '<div class="fld"><label class="flabel" for="' + controlId + '">' + esc(label) + '</label>' + inner + '</div>';
 }
 
 function setParticipants(id, value) {
   const enc = library.encounters.find((e) => e.id === id);
   if (!enc) return;
-  enc.def.participants = value.split(",").map((s) => s.trim()).filter(Boolean);
+  try { enc.def.participants = parseParticipantNames(value); }
+  catch (error) { toast(error.message); return; }
   save();
 }
 
@@ -961,7 +1028,7 @@ function obstacleEditorHtml(enc) {
   const list = enc.def.obstacles || [];
   return '<div class="fld"><label class="flabel">Obstacles</label>'
     + list.map((o, i) =>
-      '<div class="obrow">'
+      '<div class="obrow" data-fields="Obstacle name|Obstacle point cost|Obstacle mode" data-remove="Remove obstacle">'
       + '<input class="inp" value="' + esc(o.name) + '" oninput="setObstacle(\''
       + enc.id + "','" + o.id + '\',\'name\',this.value)">'
       + '<input class="inp num" type="number" min="1" value="' + o.cost
@@ -986,7 +1053,7 @@ function setObstacle(encId, obId, key, value) {
   const enc = library.encounters.find((e) => e.id === encId);
   const ob = enc && (enc.def.obstacles || []).find((o) => o.id === obId);
   if (!ob) return;
-  ob[key] = key === "cost" ? Math.max(1, parseInt(value, 10) || 1) : value;
+  ob[key] = key === "cost" ? Math.min(1000000, Math.max(1, parseInt(value, 10) || 1)) : value;
   save();
 }
 function addObstacle(encId) {
@@ -1007,37 +1074,12 @@ function removeObstacle(encId, obId) {
   save(); renderAll();
 }
 
-function pickObstacle(encId) {
-  const enc = library.encounters.find((e) => e.id === encId);
-  if (!enc) return;
-  const lib = GENERATED_CHASE_OBSTACLES || [];
-  const term = prompt("Search GM Core's sample obstacles by name, terrain or level\n"
-    + "(e.g. \"urban\", \"rooftops\", \"5\"):", "");
-  if (term === null) return;
-  const t = term.trim().toLowerCase();
-  const hits = lib.filter((o) => !t
-    || o.name.toLowerCase().indexOf(t) !== -1
-    || o.table.toLowerCase().indexOf(t) !== -1
-    || String(o.level) === t);
-  if (!hits.length) { toast("Nothing matched."); return; }
-  const list = hits.slice(0, 20).map((o, i) =>
-    (i + 1) + ") " + o.name + " (" + o.table + ", level " + o.level + ") — "
-    + o.options.map((x) => titleCase(x.skill) + " DC " + x.dc).join(", ")).join("\n");
-  const pick = parseInt(prompt(list + "\n\nNumber:", "1"), 10) - 1;
-  const chosen = hits[pick];
-  if (!chosen) return;
-  const n = (enc.def.obstacles || []).length;
-  enc.def.obstacles.push(newObstacle(chosen.name,
-    suggestedCost(subOf(enc).obstacleCost, (enc.def.participants || []).length || 4, n),
-    { options: chosen.options.map((o) => ({ skill: o.skill, dc: o.dc, how: o.how })) }));
-  save(); renderAll();
-  toast("Added " + chosen.name + ".");
-}
+function pickObstacle(encId) { openObstaclePicker(encId); }
 
 function checkEditorHtml(enc) {
   return '<div class="fld"><label class="flabel">Research checks</label>'
     + (enc.def.checks || []).map((c) =>
-      '<div class="obrow">'
+      '<div class="obrow" data-fields="Research source name|Research skill|Research DC|Maximum Research Points" data-remove="Remove research source">'
       + '<input class="inp" value="' + esc(c.name) + '" oninput="setCheck(\'' + enc.id + "','" + c.id + '\',\'name\',this.value)">'
       + '<input class="inp" value="' + esc(c.skill) + '" oninput="setCheck(\'' + enc.id + "','" + c.id + '\',\'skill\',this.value)">'
       + '<input class="inp num" type="number" value="' + c.dc + '" oninput="setCheck(\'' + enc.id + "','" + c.id + '\',\'dc\',this.value)">'
@@ -1050,7 +1092,7 @@ function setCheck(encId, cid, key, value) {
   const enc = library.encounters.find((e) => e.id === encId);
   const c = enc && (enc.def.checks || []).find((x) => x.id === cid);
   if (!c) return;
-  c[key] = (key === "dc" || key === "cap") ? (parseInt(value, 10) || 0) : value;
+  c[key] = (key === "dc" || key === "cap") ? Math.min(1000000, Math.max(0, parseInt(value, 10) || 0)) : value;
   save();
 }
 function addCheck(encId) {
@@ -1069,7 +1111,7 @@ function removeCheck(encId, cid) {
 function npcEditorHtml(enc) {
   const npc = enc.def.npc;
   const rows = (kind) => (npc[kind] || []).map((r, i) =>
-    '<div class="obrow"><input class="inp" value="' + esc(r.label)
+    '<div class="obrow" data-fields="NPC fact description|DC adjustment" data-remove="Remove NPC fact or skill"><input class="inp" value="' + esc(r.label)
     + '" oninput="setFact(\'' + enc.id + "','" + kind + "'," + i + ',\'label\',this.value)">'
     + '<input class="inp num" type="number" value="' + r.dc + '" oninput="setFact(\''
     + enc.id + "','" + kind + "'," + i + ',\'dc\',this.value)">'
@@ -1083,7 +1125,7 @@ function npcEditorHtml(enc) {
       + '" oninput="setNpc(\'' + enc.id + '\',\'discoveryDC\',this.value)">')
     + '<div class="fld"><label class="flabel">Influence skills</label>'
     + (npc.skills || []).map((s, i) =>
-      '<div class="obrow"><input class="inp" value="' + esc(s.skill)
+      '<div class="obrow" data-fields="Influence skill|Influence skill DC" data-remove="Remove NPC fact or skill"><input class="inp" value="' + esc(s.skill)
       + '" oninput="setSkill(\'' + enc.id + "'," + i + ',\'skill\',this.value)">'
       + '<input class="inp num" type="number" value="' + s.dc + '" oninput="setSkill(\''
       + enc.id + "'," + i + ',\'dc\',this.value)">'
@@ -1098,13 +1140,13 @@ function npcEditorHtml(enc) {
 function setNpc(encId, key, value) {
   const enc = library.encounters.find((e) => e.id === encId);
   if (!enc) return;
-  enc.def.npc[key] = key === "discoveryDC" ? (parseInt(value, 10) || 0) : value;
+  enc.def.npc[key] = key === "discoveryDC" ? Math.min(1000000, Math.max(0, parseInt(value, 10) || 0)) : value;
   save();
 }
 function setSkill(encId, i, key, value) {
   const enc = library.encounters.find((e) => e.id === encId);
   if (!enc) return;
-  enc.def.npc.skills[i][key] = key === "dc" ? (parseInt(value, 10) || 0) : value;
+  enc.def.npc.skills[i][key] = key === "dc" ? Math.min(1000000, Math.max(0, parseInt(value, 10) || 0)) : value;
   save();
 }
 function addSkill(encId) {
@@ -1122,7 +1164,7 @@ function factList(enc, kind) {
 }
 function setFact(encId, kind, i, key, value) {
   const enc = library.encounters.find((e) => e.id === encId);
-  factList(enc, kind)[i][key] = key === "dc" ? (parseInt(value, 10) || 0) : value;
+  factList(enc, kind)[i][key] = key === "dc" ? Math.min(1000000, Math.max(-1000000, parseInt(value, 10) || 0)) : value;
   save();
 }
 function addFact(encId, kind) {
@@ -1156,7 +1198,7 @@ function setMode(encId, mode) {
 }
 function setGoal(encId, value) {
   const enc = library.encounters.find((e) => e.id === encId);
-  enc.def.goal = Math.max(1, parseInt(value, 10) || 1);
+  enc.def.goal = Math.min(1000000, Math.max(1, parseInt(value, 10) || 1));
   save();
 }
 
@@ -1164,7 +1206,7 @@ function thresholdEditorHtml(enc) {
   return '<div class="fld"><label class="flabel">Thresholds ('
     + esc(thresholdUnit(enc)) + ')</label>'
     + (enc.def.thresholds || []).map((t, i) =>
-      '<div class="obrow"><input class="inp num" type="number" value="' + t.at
+      '<div class="obrow" data-fields="Threshold point count|Threshold name|Threshold effect" data-remove="Remove threshold"><input class="inp num" type="number" value="' + t.at
       + '" oninput="setThreshold(\'' + enc.id + "'," + i + ',\'at\',this.value)">'
       + '<input class="inp" placeholder="What it is" value="' + esc(t.label)
       + '" oninput="setThreshold(\'' + enc.id + "'," + i + ',\'label\',this.value)">'
@@ -1177,7 +1219,7 @@ function thresholdEditorHtml(enc) {
 }
 function setThreshold(encId, i, key, value) {
   const enc = library.encounters.find((e) => e.id === encId);
-  enc.def.thresholds[i][key] = key === "at" ? (parseInt(value, 10) || 0) : value;
+  enc.def.thresholds[i][key] = key === "at" ? Math.min(1000000, Math.max(0, parseInt(value, 10) || 0)) : value;
   save();
 }
 function addThreshold(encId) {
@@ -1244,7 +1286,8 @@ function lookupHtml() {
     + '<div class="refbody">' + esc(x.description || "").replace(/\n+/g, "<br>")
     + "</div></details>";
   return '<section class="card"><h2>Conditions and actions</h2>'
-    + '<input id="refFilter" class="inp" placeholder="Search ' + CONDITIONS.length
+    + '<label class="flabel" for="refFilter">Search conditions and actions</label>'
+    + '<input id="refFilter" class="inp" type="search" placeholder="Search ' + CONDITIONS.length
     + " conditions and " + ACTIONS.length + ' actions" value="' + esc(refFilter) + '">'
     + (t ? conds.map((c) => card(c, "condition")).join("")
       + acts.map((a) => card(a, "action")).join("")
@@ -1268,15 +1311,20 @@ function menuHtml() {
       + esc((s.custom && s.custom.accent) || "#a87c4a")
       + '" oninput="setAccent(this.value)"> '
       + '<button class="btn ghost" onclick="resetTheme()">Reset</button>')
-    + '<div class="note">Everything you type stays in this browser, on this device. '
-    + "There is no account and no server. Use an encounter's <b>Code</b> button to "
+    + '<div class="note">Everything you type stays on this device. '
+    + "There is no account and no server. Use an encounter's <b>" + (androidHost() ? "Share" : "Code") + "</b> button to "
     + "move prep to another device.</div>"
     + '<div class="note dim">Rules text: ' + esc(meta.source) + " @ "
     + esc(meta.sourceCommit || "?") + " (" + esc(meta.sourceBranch) + "), built "
     + esc(meta.generated) + ". " + esc(meta.pages) + " subsystem pages, "
     + esc(meta.obstacles) + " sample obstacles. "
     + meta.sources.map((x) => esc(x.title) + " (" + esc(x.license) + ")").join(", ")
-    + ".</div></section>";
+    + ".</div>"
+    + mobileSettingsHtml()
+    + '<p class="dim">An unofficial Pathfinder tool, not affiliated with Paizo.</p>'
+    + APP_NOTICES.map((n) => '<details class="ref"><summary>' + esc(n.title)
+      + '</summary><pre class="legaltext">' + esc(n.text) + '</pre></details>').join("")
+    + "</section>";
 }
 
 /* ============================================================
@@ -1304,6 +1352,7 @@ function wireInputs() {
 
 function boot() {
   load();
+  wireMobile();
   applyTheme();
   const icon = byId("titleIcon");
   if (icon) {
@@ -1314,7 +1363,7 @@ function boot() {
   }
   current = library.encounters.length ? "run" : "prep";
   renderAll();
-  if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+  if (!androidHost() && "serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
 }

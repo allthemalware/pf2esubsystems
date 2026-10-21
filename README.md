@@ -12,7 +12,8 @@ research source stops paying out once it's spent, and every one of those moves
 can be undone.
 
 Single self-contained `dist/index.html` — no framework, no build step to *use*
-it, nothing sent anywhere. Open it from a file, host it, or install it as an app.
+it, with encounters saved on your device. Open it from a file, host it, or
+install it as an app.
 
 ## The five modes
 
@@ -43,6 +44,29 @@ thresholds, and the same board runs them.
   book's rule of thumb and left editable.
 
 ## Run it
+
+### Android
+
+The Android app includes Run, Prep and Reference; the separate PF2e Primer is
+not bundled. It works offline and shares encounter codes through Android's
+share sheet. See [android/README.md](android/README.md) for building a test APK,
+installing it on a phone, and creating a signed release bundle.
+Optional tips in Settings use Google Play Billing. Every feature remains free;
+the browser build has no payment flow. Product setup and payment testing are
+documented in [the Android guide](android/README.md#google-play-tips).
+
+```sh
+npm run android:apk
+```
+
+Requires Python 3, a supported JDK and the Android SDK. The GitHub Actions
+**Build Android app** workflow can also produce an installable debug APK.
+For external testers, **Prepare Android prerelease** builds a signed APK and
+creates a draft prerelease with a checksum. See the
+[GitHub testing instructions](android/README.md#github-prereleases-for-testers)
+for signing secrets, publishing the download, and collecting feedback.
+
+### Browser
 
 ```sh
 python3 tools/build.py        # assemble dist/index.html
@@ -82,6 +106,10 @@ The explanations *around* that text, the run board, and every judgement about
 what to enforce and what to ask are ours.
 
 ## Tests
+
+Additional mobile checks cover complete-library backup and restore, validated
+encounter codes, party presets, setup forms, searchable obstacle selection,
+screen-awake behavior and accessible controls. Run all checks with `npm run check`.
 
 ```sh
 npm install                   # jsdom

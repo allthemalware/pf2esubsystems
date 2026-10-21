@@ -30,7 +30,7 @@
 
 <header class="top">
   <div class="tophead">
-    <h1><span class="apptitle-ic" id="titleIcon"></span> PF2e Subsystems</h1>
+    <h1><span class="apptitle-ic" id="titleIcon" aria-hidden="true"></span> PF2e Subsystems</h1>
     <div class="headbtns">
       <button class="menubtn" id="undoBtn" onclick="undoLast()" title="Undo the last change" aria-label="Undo">
         <svg class="icn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
@@ -44,13 +44,20 @@
   <div class="sub" id="headSub"></div>
 </header>
 
-<nav class="tabs" id="tabs"></nav>
+<nav class="tabs" id="tabs" aria-label="App sections"></nav>
 
 <main class="wrap" id="views"></main>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+<div id="runStatus" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+<dialog id="appDialog" aria-labelledby="dialogTitle">
+  <div id="dialogBody"></div>
+</dialog>
+<input id="backupFile" type="file" accept="application/json,.json" hidden aria-label="Choose a library backup">
 
 <script>
+/*__INJECT_PLATFORM__*/
+/*__INJECT_NOTICES__*/
 /*__INJECT_DATA__*/
 </script>
 <script>
@@ -60,7 +67,13 @@
 /*__INJECT_CONTENT__*/
 </script>
 <script>
+/*__INJECT_VALIDATION__*/
+</script>
+<script>
 /*__INJECT_ENGINE__*/
+</script>
+<script>
+/*__INJECT_MOBILE__*/
 </script>
 <script>
 (function(){ try { boot(); } catch(e){ document.getElementById("views").textContent = "Failed to start: " + e.message; } })();

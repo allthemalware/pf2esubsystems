@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PF2e Subsystems</string>
+    <string name="share_encounter">Share encounter</string>
+    <string name="no_share_app">No app is available to share this encounter.</string>
+    <string name="share_too_large">This encounter is too large to share.</string>
+    <string name="view_stopped">The app view stopped. Your saved encounters are still on this device.</string>
+    <string name="reload">Reload</string>
+    <string name="tip_title">Leave a tip</string>
+    <string name="tip_explanation">An optional, one-time tip to support development. All features remain free. Google Play confirms the final price before payment.</string>
+    <string name="tip_small">Small tip</string>
+    <string name="tip_medium">Medium tip</string>
+    <string name="tip_large">Large tip</string>
+    <string name="tip_loading">Loading tip options from Google Play…</string>
+    <string name="tip_thanks">Thank you for supporting PF2e Subsystems!</string>
+    <string name="tip_cancelled">Tip cancelled.</string>
+    <string name="tip_pending">Your tip is awaiting payment in Google Play. It will be confirmed when payment completes.</string>
+    <string name="tip_processing">Your previous tip is still being confirmed. Please try again shortly.</string>
+    <string name="tip_finish_later">Google Play could not confirm your tip yet. Reopen the app with an internet connection to retry confirmation.</string>
+    <string name="tip_unavailable">Google Play tipping is unavailable on this device or account. You can continue using every feature.</string>
+    <string name="tip_not_configured">Tips are not available from Google Play yet. Please try again later.</string>
+    <string name="tip_connection_error">Could not contact Google Play. Check your connection and try again.</string>
+    <string name="tip_error">Google Play could not complete the tip. Please try again.</string>
+</resources>

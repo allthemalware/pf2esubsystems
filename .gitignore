@@ -5,6 +5,17 @@ __pycache__/
 *.pyc
 
 # editor / local settings
+.idea/
+*.iml
 
 # local reference clone used by tools/build_reference.py (not part of the project)
 /pf2e-data/
+
+# Android build products and local tools/signing material
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+/android/gradle/wrapper/gradle-wrapper.jar
+*.jks
+*.keystore
