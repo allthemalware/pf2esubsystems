@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = ROOT / "android/app/src/main/java/io/github/allthemalware/pf2esubsystems/TipPurchases.java"
+SOURCE = ROOT / "android/app/src/main/java/io/github/thewhytewolf/pf2esubsystems/TipPurchases.java"
 TEST = ROOT / "tools/tests/TipPurchasesTest.java"
 
 
@@ -22,4 +22,4 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory(prefix="pf2e-billing-tests-") as output:
         subprocess.run([jdk_tool("javac"), "--release", "17", "-d", output, str(SOURCE), str(TEST)], check=True)
         subprocess.run([jdk_tool("java"), "-cp", output,
-                        "io.github.allthemalware.pf2esubsystems.TipPurchasesTest"], check=True)
+                        "io.github.thewhytewolf.pf2esubsystems.TipPurchasesTest"], check=True)
